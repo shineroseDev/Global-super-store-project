@@ -1,0 +1,186 @@
+<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Financial Intelligence Dashboard</title>
+<style>
+:root{--bg:#F4F5F7;--cd:#fff;--tx:#202124;--mu:#6b7280;--ln:#e5e7eb;--rd:#D6002A}
+[data-theme=dark]{--bg:#15181d;--cd:#1e2229;--tx:#e8eaed;--mu:#9aa3b0;--ln:#323945}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--tx)}
+.app{display:flex;min-height:100vh}aside{width:230px;background:var(--cd);border-right:1px solid var(--ln);padding:16px;flex:none}
+.logo{font-weight:800;font-size:17px;color:var(--rd);margin-bottom:2px}.sub{color:var(--mu);font-size:11px;margin-bottom:16px}
+.nav{display:block;width:100%;text-align:left;border:0;background:none;color:var(--tx);padding:9px 10px;border-radius:8px;cursor:pointer;font:inherit;margin-bottom:2px}
+.nav.on{background:var(--rd);color:#fff}.nav:hover:not(.on){background:var(--bg)}
+main{flex:1;padding:18px;min-width:0}.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+select,button,input{font:inherit;color:var(--tx);background:var(--cd);border:1px solid var(--ln);border-radius:8px;padding:6px 9px}button{cursor:pointer}
+.pri{background:var(--rd);color:#fff;border-color:var(--rd)}.chip{background:var(--rd);color:#fff;border-radius:99px;padding:2px 10px;font-size:12px}
+h1{margin:0 0 2px;font-size:22px}.pu{color:var(--mu);margin:0 0 14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.card{background:var(--cd);border:1px solid var(--ln);border-radius:12px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.kpi{cursor:pointer}.kpi small{color:var(--mu)}.kpi b{display:block;font-size:22px}.tag{font-size:10px;color:var(--mu);border:1px solid var(--ln);border-radius:4px;padding:0 4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:12px}.card h3{margin:0 0 6px;font-size:13px}
+.ch{height:310px}.empty{height:200px;display:flex;align-items:center;justify-content:center;color:var(--mu)}
+table{border-collapse:collapse;width:100%;font-size:12px}th,td{padding:5px 8px;border-bottom:1px solid var(--ln);text-align:left}.sc{overflow-x:auto}
+.drop{border:2px dashed var(--rd);border-radius:12px;padding:30px;text-align:center;margin-bottom:12px}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9}.ov>div{max-width:440px}
+.hi{color:var(--rd);font-weight:700}.err{background:#fde8ec;color:#8a0019;padding:10px;border-radius:8px;margin-bottom:10px}
+@media(max-width:800px){.app{flex-direction:column}aside{width:auto}.grid{grid-template-columns:1fr}}
+@media print{aside,.noprint{display:none!important}body{background:#fff}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<script>window.Plotly||document.write('<script src="https://unpkg.com/plotly.js-dist-min@2.35.2/plotly.min.js"><\/script>')</script>
+<script>window.Plotly||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/1.58.5/plotly.min.js"><\/script>')</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>window.XLSX||document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>')</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.min.js"></script>
+<script>window.PptxGenJS||document.write('<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"><\/script>')</script>
+</head><body><div id="root"></div>
+<script>
+const {useState,useEffect,useRef,useMemo}=React,html=htm.bind(React.createElement);
+const RED='#D6002A',NAVY='#3b4a6b',GREY='#b8bfcc',PAL=[RED,NAVY,'#8a94a6','#e8895a','#2a9d8f','#b8bfcc','#6c5ce7'];
+// ---------- utilities ----------
+const num=v=>{if(typeof v==='number')return v;if(v==null)return NaN;let s=String(v).trim();if(!s)return NaN;const n=/^\(.*\)$/.test(s)||/^-/.test(s);s=s.replace(/[^0-9.]/g,'');return s&&!isNaN(+s)?(n?-1:1)*+s:NaN};
+const pdate=(v,df)=>{if(v instanceof Date)return isNaN(v)?null:v;const m=String(v==null?'':v).trim().match(/^(\d{1,4})[\/\-.](\d{1,2})[\/\-.](\d{1,4})/);if(!m)return null;let a=+m[1],b=+m[2],c=+m[3],y,mo,d;if(a>31){y=a;mo=b;d=c}else{y=c<100?c+2000:c;if(df){d=a;mo=b}else{mo=a;d=b}}const t=new Date(Date.UTC(y,mo-1,d));return t.getUTCMonth()===mo-1?t:null};
+const cmp=v=>v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(1)+'K':v.toFixed(0);
+const mkF=ds=>({$:v=>(v<0?'-':'')+ds.sym+cmp(Math.abs(v)),pc:v=>(v*100).toFixed(1)+'%'});
+const agg=(rs,ds,kf)=>{const M=ds.M,m=new Map();for(const r of rs){const k=kf(r);if(k==null||k==='')continue;let a=m.get(k);if(!a)m.set(k,a={k,rev:0,pro:0,ship:0,n:0,loss:0});a.rev+=r[M.rev]||0;if(M.pro){const p=r[M.pro]||0;a.pro+=p;if(p<0)a.loss++}if(M.ship)a.ship+=r[M.ship]||0;a.n++}
+ return[...m.values()].map(a=>(a.cost=M.pro?a.rev-a.pro:0,a.mg=a.rev?a.pro/a.rev:0,a.cr=a.rev?a.cost/a.rev:0,a))};
+// ---------- ingestion, profiling, cleaning ----------
+async function readFile(f){const ext=f.name.split('.').pop().toLowerCase();if(!['csv','xls','xlsx'].includes(ext))throw Error('Unsupported file type. Please upload a CSV, XLS or XLSX file.');const buf=await f.arrayBuffer();if(ext==='csv'){let t;try{t=new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch(e){t=new TextDecoder('windows-1252').decode(buf)}return XLSX.read(t,{type:'string',raw:true})}return XLSX.read(buf,{type:'array',cellDates:true})}
+function build(raw,H){
+ const smp=raw.slice(0,3000),info={};let df=false;
+ H.forEach(h=>{const v=smp.map(r=>r[h]).filter(x=>x!==''&&x!=null),n=v.length||1,nn=v.filter(x=>!isNaN(num(x))).length,nd=v.filter(x=>pdate(x)).length;
+  if(/date/i.test(h)&&nd>=.9*n){info[h]='date';v.forEach(x=>{const m=String(x).match(/^(\d+)[\/\-.]/);if(m&&+m[1]>12&&+m[1]<32)df=true})}
+  else if(/(^|\s)id$|postal|zip|^row/i.test(h))info[h]='id';else info[h]=nn>=.9*n?'num':'cat'});
+ const nums=H.filter(h=>info[h]=='num'),dts=H.filter(h=>info[h]=='date'),cats=H.filter(h=>info[h]=='cat');
+ const find=re=>nums.find(h=>re.test(h)),M={rev:find(/^(sales|revenue|turnover|amount)/i),pro:find(/profit|net income/i),ship:find(/shipping|freight|expense|cost/i),qty:find(/quantity|units/i),disc:find(/discount/i)};
+ const dcol=H.find(h=>info[h]=='date'&&/order|invoice|transaction|posting/i.test(h))||dts[0];
+ const miss={},dset={},seen=new Set(),rows=[];let dups=0,bad=0,badD=0;H.forEach(h=>miss[h]=0);cats.forEach(h=>dset[h]=new Set());
+ raw.forEach(o=>{H.forEach(h=>{if(o[h]===''||o[h]==null)miss[h]++});const key=H.map(h=>o[h]).join('\u0001');if(seen.has(key))dups++;else seen.add(key);
+  const r={};nums.forEach(h=>r[h]=num(o[h]));dts.forEach(h=>r[h]=pdate(o[h],df));cats.forEach(h=>{const s=String(o[h]==null?'':o[h]).replace(/\s+/g,' ').trim();r[h]=s;if(s)dset[h].add(s)});
+  if(M.rev&&isNaN(r[M.rev])){bad++;return}
+  const d=dcol&&r[dcol];if(d){r._y=d.getUTCFullYear();const mo=d.getUTCMonth()+1;r._m=r._y+'-'+String(mo).padStart(2,'0');r._q=r._y+'-Q'+Math.ceil(mo/3);r._mn=mo}else if(dcol)badD++;
+  rows.push(r)});
+ const dims=cats.filter(h=>dset[h].size>=2&&dset[h].size<=30).sort((a,b)=>dset[a].size-dset[b].size),card={};dims.forEach(h=>card[h]=dset[h].size);
+ const years=[...new Set(rows.map(r=>r._y).filter(Boolean))].sort();
+ const slicers=[...(years.length?[{k:'_y',l:'Year ('+dcol+')',v:years.map(String)}]:[]),...dims.filter(h=>card[h]<=15).slice(0,4).map(h=>({k:h,l:h,v:[...dset[h]].sort()}))];
+ const sv=raw.map(o=>o[M.rev]).find(x=>typeof x==='string'&&/[$£€¥]/.test(x)),sym=sv?(sv.match(/[$£€¥]/)||[''])[0]:'';
+ const trans=[`Numeric text (currency symbols, thousands separators, parentheses negatives) converted to numbers in: ${nums.join(', ')||'none'}`,`Dates parsed as ${df?'day-first':'month-first'} in: ${dts.join(', ')||'none'}`,'Category labels trimmed and whitespace-collapsed',`Original uploaded data preserved; analysis runs on a separate cleaned copy`];
+ return{rows,H,info,M,dcol,dims,card,years,slicers,sym,nums,dq:{orig:raw.length,clean:rows.length,dups,miss,bad,badD,trans,df}}}
+// ---------- insights ----------
+function insights(rs,ds){const{M,dims,card}=ds,R=M.rev,P=M.pro,{$,pc}=mkF(ds),recs=[],notes=[];const S=agg(rs,ds,()=>1)[0];if(!S)return{recs,notes};
+ recs.push({c:'key',t:'Observed',f:`Total ${R}`,m:`${$(S.rev)} across ${S.n.toLocaleString()} records`,i:'Baseline scale of the current view.',a:'Use as the reference for the comparisons below.',p:'Low'});
+ if(P){recs.push({c:S.mg<0?'con':'pos',t:'Calculated',f:`Overall ${P} margin (${P} ÷ ${R})`,m:`${pc(S.mg)} (${$(S.pro)} ${P})`,i:S.mg<0?'The business is loss-making in this view.':'Profitable overall in this view.',a:'Track margin monthly against this level.',p:S.mg<0?'High':'Low'});
+  const cand=[];dims.filter(d=>card[d]<=30).forEach(d=>agg(rs,ds,r=>r[d]).filter(a=>a.n>=30).forEach(a=>cand.push({d,...a})));
+  cand.sort((a,b)=>a.mg-b.mg).slice(0,3).forEach(c=>recs.push({c:'con',t:'Calculated',f:`${c.d} “${c.k}” has one of the weakest margins`,m:`${pc(c.mg)} margin vs ${pc(S.mg)} overall on ${$(c.rev)} ${R}`,i:'Revenue here converts to profit less efficiently than elsewhere.',a:`Investigate pricing, discounting and cost drivers for ${c.d} “${c.k}”.`,p:c.mg<0?'High':c.mg<S.mg/2?'Medium':'Low'}));
+  const best=cand.slice().sort((a,b)=>b.mg-a.mg)[0];if(best)recs.push({c:'pos',t:'Calculated',f:`${best.d} “${best.k}” has the strongest margin`,m:`${pc(best.mg)} on ${$(best.rev)} ${R}`,i:'A benchmark for what efficient conversion looks like.',a:'Study what drives this performance and test replicating it.',p:'Low'});
+  recs.push({c:'risk',t:'Calculated',f:'Share of records with negative '+P,m:`${pc(S.loss/S.n)} (${S.loss.toLocaleString()} of ${S.n.toLocaleString()})`,i:'Loss-making records erode overall profit.',a:'Drill into the loss-making records on page 4 for common attributes.',p:S.loss/S.n>.2?'High':'Medium'});
+  if(M.disc){const b=agg(rs,ds,r=>(r[M.disc]||0).toFixed(2)).filter(a=>a.n>=30).sort((a,b)=>a.mg-b.mg)[0];if(b)recs.push({c:'risk',t:'Calculated',f:`Lowest-margin ${M.disc} level is ${(+b.k*100).toFixed(0)}%`,m:`${pc(b.mg)} margin on ${b.n.toLocaleString()} records`,i:'Deep discounting may be reducing profitability.',a:'Review discount approval rules at this level.',p:b.mg<0?'High':'Medium'})}}
+ const top=dims[0]&&agg(rs,ds,r=>r[dims[0]]).sort((a,b)=>b.rev-a.rev)[0];if(top&&S.rev)recs.push({c:'key',t:'Observed',f:`Largest ${dims[0]}: “${top.k}”`,m:`${pc(top.rev/S.rev)} of ${R} (${$(top.rev)})`,i:'Indicates revenue concentration.',a:'Monitor dependence on this group.',p:top.rev/S.rev>.6?'Medium':'Low'});
+ const ys=[...new Set(rs.map(r=>r._y).filter(Boolean))].sort();if(ys.length>=2){const[a,b]=ys.slice(-2),A=agg(rs.filter(r=>r._y==a),ds,()=>1)[0],B=agg(rs.filter(r=>r._y==b),ds,()=>1)[0];if(A&&B&&A.rev)recs.push({c:B.rev>=A.rev?'pos':'con',t:'Calculated',f:`${R} change ${a}→${b}`,m:`${pc(B.rev/A.rev-1)}${P&&A.pro?`; ${P} ${pc(B.pro/A.pro-1)}`:''}`,i:'Year-over-year momentum.',a:'Compare drivers across the two years.',p:B.rev<A.rev?'High':'Low'})}
+ if(P){const mm=agg(rs,ds,r=>r._m),mu=mm.reduce((s,a)=>s+a.pro,0)/(mm.length||1),sd=Math.sqrt(mm.reduce((s,a)=>s+(a.pro-mu)**2,0)/(mm.length||1));const an=sd?mm.filter(a=>Math.abs(a.pro-mu)>2*sd):[];if(an.length)recs.push({c:'risk',t:'Calculated',f:`${an.length} month(s) with unusual ${P} (>2σ from mean)`,m:an.map(a=>a.k).sort().join(', '),i:'Unusual swings reduce earnings predictability.',a:'Investigate one-off events in these months.',p:'Medium'})}
+ notes.push('Dataset has no explicit expense, budget, asset, liability or cash columns, so liquidity, leverage, budget-variance and cash-flow analyses are not shown.');
+ if(P)notes.push(`“Derived cost” = ${R} − ${P}. It is a calculated figure, not a reported one.`);
+ if(M.ship)notes.push(`“${M.ship}” is shown as reported; the data does not state whether it is included in ${R} − ${P}.`);
+ notes.push('No forecast is shown: a defensible forecast needs a validated method and longer history than is evidenced here.');
+ return{recs,notes}}
+// ---------- charts ----------
+function charts(pg,{rs,ds,dim,dim2,tog}){const M=ds.M,R=M.rev,P=M.pro,{$}=mkF(ds),dc=ds.dcol,D=(d)=>agg(rs,ds,r=>r[d]).sort((a,b)=>b.rev-a.rev),byM=agg(rs,ds,r=>r._m).sort((a,b)=>a.k<b.k?-1:1),mk=byM.map(o=>o.k);
+ const bar=(a,y,name,col)=>({type:'bar',x:a.map(o=>o.k),y:a.map(y),name,marker:{color:col||a.map(o=>y(o)<0?RED:NAVY)}}),pd=D(dim),pd2=D(dim2),cost=`Derived Cost (${R} − ${P})`;
+ const pm=y=>({ticksuffix:'%'}),pk=(d)=>v=>tog(d,String(v));
+ if(pg=='overview')return[
+  {t:`${R}${P?` and ${P}`:''} Trend by ${dc} (Month)`,d:[{type:'bar',x:mk,y:byM.map(o=>o.rev),name:R,marker:{color:GREY}},P&&{type:'scatter',mode:'lines',x:mk,y:byM.map(o=>o.pro),name:P,line:{color:RED}}].filter(Boolean),pick:pk('_m')},
+  {t:`${R} by ${dim}`,d:[bar(pd,o=>o.rev,R,NAVY)],pick:pk(dim)},
+  P&&{t:`Profit Margin (${P} ÷ ${R}) by ${dim}`,d:[bar(pd,o=>o.mg*100,'Margin %')],l:{yaxis:{ticksuffix:'%'}},pick:pk(dim)},
+  {t:`${R} by ${dc} (Quarter)`,d:[bar(agg(rs,ds,r=>r._q).sort((a,b)=>a.k<b.k?-1:1),o=>o.rev,R,NAVY)],pick:pk('_q')}].filter(Boolean);
+ if(pg=='rev'){const ys=ds.years.map(String),hm=new Map();agg(rs,ds,r=>r._y&&r[dim]?r[dim]+'|'+r._y:null).forEach(a=>hm.set(a.k,a.mg*100));
+  return[
+  {t:`${R} Trend by ${dc} (Month)`,d:[{type:'scatter',mode:'lines+markers',x:mk,y:byM.map(o=>o.rev),name:R,line:{color:NAVY}}],pick:pk('_m')},
+  {t:`${R} Composition by ${dim} (Treemap)`,d:[{type:'treemap',labels:pd.filter(o=>o.rev>0).map(o=>o.k),parents:pd.filter(o=>o.rev>0).map(()=>''),values:pd.filter(o=>o.rev>0).map(o=>o.rev),textinfo:'label+percent root',marker:{colors:PAL}}],l:{margin:{l:4,r:4,t:4,b:4}},pick:pk(dim)},
+  P&&{t:`${P} Contribution by ${dim} (Waterfall)`,d:[{type:'waterfall',x:[...pd.map(o=>o.k),'Total'],y:[...pd.map(o=>o.pro),pd.reduce((s,o)=>s+o.pro,0)],measure:[...pd.map(()=>'relative'),'total'],increasing:{marker:{color:NAVY}},decreasing:{marker:{color:RED}},totals:{marker:{color:'#8a94a6'}}}],pick:pk(dim)},
+  P&&ys.length&&{t:`Profit Margin % by ${dim} and ${dc} (Year)`,d:[{type:'heatmap',x:ys,y:pd.map(o=>o.k),z:pd.map(o=>ys.map(y=>hm.has(o.k+'|'+y)?hm.get(o.k+'|'+y):null)),zmid:0,colorscale:[[0,RED],[.5,'#f4f5f7'],[1,NAVY]],colorbar:{ticksuffix:'%'}}],l:{yaxis:{automargin:true,autorange:'reversed'}}},
+  dim2!=dim&&P&&{t:`${P} by ${dim2}`,d:[bar(pd2,o=>o.pro,P)],pick:pk(dim2)}].filter(Boolean)}
+ if(pg=='cost'){if(!P&&!M.ship)return[];const k=P?'cost':'ship',kn=P?cost:M.ship,pr=D(dim).sort((a,b)=>b[k]-a[k]);let cum=0;const tot=pr.reduce((s,o)=>s+o[k],0)||1;
+  return[
+  {t:`${kn} Trend by ${dc} (Month)`,d:[P&&{type:'scatter',mode:'lines',x:mk,y:byM.map(o=>o.cost),name:cost,line:{color:RED}},M.ship&&{type:'scatter',mode:'lines',x:mk,y:byM.map(o=>o.ship),name:M.ship,line:{color:NAVY}}].filter(Boolean),pick:pk('_m')},
+  {t:`Pareto of ${kn} by ${dim}`,d:[bar(pr,o=>o[k],kn,NAVY),{type:'scatter',mode:'lines+markers',x:pr.map(o=>o.k),y:pr.map(o=>(cum+=o[k])/tot*100),yaxis:'y2',name:'Cumulative %',line:{color:RED}}],l:{yaxis2:{overlaying:'y',side:'right',range:[0,100],ticksuffix:'%',showgrid:false}},pick:pk(dim)},
+  P&&{t:`${cost} ÷ ${R} by ${dim}`,d:[bar(pd,o=>o.cr*100,'Cost-to-revenue %',NAVY)],l:{yaxis:{ticksuffix:'%'}},pick:pk(dim)},
+  M.ship&&{t:`${M.ship} by ${dim2}`,d:[bar(pd2.slice().sort((a,b)=>b.ship-a.ship),o=>o.ship,M.ship,NAVY)],pick:pk(dim2)}].filter(Boolean)}
+ if(pg=='risk'){const ys=[...new Set(byM.map(o=>o.k.slice(0,4)))],mu=byM.reduce((s,a)=>s+a.pro,0)/(byM.length||1),sd=Math.sqrt(byM.reduce((s,a)=>s+(a.pro-mu)**2,0)/(byM.length||1)),an=byM.filter(a=>sd&&Math.abs(a.pro-mu)>2*sd);
+  const vals=P?rs.map(r=>r[P]).filter(v=>!isNaN(v)).sort((a,b)=>a-b):[],lo=vals[Math.floor(vals.length*.01)],hi=vals[Math.floor(vals.length*.99)];
+  const dl=M.disc&&P?agg(rs,ds,r=>(r[M.disc]||0).toFixed(2)).sort((a,b)=>a.k-b.k):[];
+  return[
+  {t:`${R} by Month, Year-over-Year Comparison`,d:ys.map((y,i)=>({type:'scatter',mode:'lines+markers',name:y,x:byM.filter(o=>o.k.slice(0,4)==y).map(o=>+o.k.slice(5)),y:byM.filter(o=>o.k.slice(0,4)==y).map(o=>o.rev),line:{color:PAL[i%7]}})),l:{xaxis:{dtick:1,title:'Month'}}},
+  P&&{t:`Monthly ${P} with Anomalies (>2σ from mean)`,d:[{type:'scatter',mode:'lines',x:mk,y:byM.map(o=>o.pro),name:P,line:{color:NAVY}},{type:'scatter',mode:'markers',x:an.map(o=>o.k),y:an.map(o=>o.pro),name:'Anomaly',marker:{color:RED,size:11}}],pick:pk('_m')},
+  P&&{t:`Share of Records with Negative ${P} by ${dim}`,d:[bar(pd,o=>o.n?o.loss/o.n*100:0,'Loss-making %')],l:{yaxis:{ticksuffix:'%'}},pick:pk(dim)},
+  P&&{t:`Distribution of ${P} per Record (1st–99th percentile)`,d:[{type:'histogram',x:vals.filter(v=>v>=lo&&v<=hi),nbinsx:40,marker:{color:NAVY}}],l:{xaxis:{title:P},yaxis:{title:'Records'}}},
+  dl.length>1&&dl.length<=25&&{t:`Profit Margin % by ${M.disc} Level`,d:[bar(dl.map(a=>({...a,k:(+a.k*100).toFixed(0)+'%'})),o=>o.mg*100,'Margin %')],l:{yaxis:{ticksuffix:'%'}}}].filter(Boolean)}
+ return[]}
+function Chart({t,d,l,pick,theme}){const ref=useRef(),has=d&&d.some(x=>['x','values','z'].some(k=>x[k]&&x[k].length));
+ useEffect(()=>{const el=ref.current;if(!el||!has||!window.Plotly)return;const c=theme=='dark'?'#323945':'#e5e7eb',ax=(o)=>({gridcolor:c,automargin:true,...(o||{})});l=l||{};
+  Plotly.react(el,d,{margin:{l:56,r:20,t:6,b:50},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',font:{color:theme=='dark'?'#e8eaed':'#202124',size:11},colorway:PAL,legend:{orientation:'h',y:-.22},hovermode:'closest',...l,xaxis:ax(l.xaxis),yaxis:ax(l.yaxis)},{responsive:true,displayModeBar:false});
+  el.removeAllListeners&&el.removeAllListeners('plotly_click');el.on('plotly_click',e=>{const p=e.points&&e.points[0];if(p&&pick)pick(p.label!==undefined&&p.x===undefined?p.label:p.x)})});
+ if(!window.Plotly)return html`<div class="card"><h3>${t}</h3><div class="empty">Charting library could not be loaded. Check your internet connection and reload.</div></div>`;
+ return html`<div class="card"><h3>${t}</h3>${has?html`<div class="ch" data-t=${t} ref=${ref}></div>`:html`<div class="empty">No valid data for the current filters</div>`}</div>`}
+// ---------- app ----------
+function Drill({rs,ds,pg,dim}){const M=ds.M,{$}=mkF(ds),key=pg=='risk'&&M.pro?(a,b)=>a[M.pro]-b[M.pro]:pg=='cost'&&M.pro?(a,b)=>(b[M.rev]-b[M.pro])-(a[M.rev]-a[M.pro]):(a,b)=>b[M.rev]-a[M.rev];
+ const top=useMemo(()=>rs.slice().sort(key).slice(0,12),[rs,pg]),cols=[ds.dcol,...ds.dims.slice(0,3),M.rev,M.pro,M.ship].filter(Boolean);
+ return html`<div class="card" style=${{marginTop:12}}><h3>Drillthrough: underlying records (${pg=='risk'?'lowest '+M.pro:pg=='cost'?'highest derived cost':'highest '+M.rev}, top 12 of ${rs.length.toLocaleString()})</h3><div class="sc"><table><tr>${cols.map(c=>html`<th>${c}</th>`)}</tr>${top.map(r=>html`<tr>${cols.map(c=>html`<td>${r[c] instanceof Date?r[c].toISOString().slice(0,10):typeof r[c]=='number'?$(r[c]):r[c]}</td>`)}</tr>`)}</table></div></div>`}
+function App(){
+ const[ds0,setDs]=useState(null),[err,setErr]=useState(''),[busy,setBusy]=useState(''),[page,setPage]=useState('data'),[f,setF]=useState({}),[di,setDi]=useState(0),[theme,setTheme]=useState('light'),[bm,setBm]=useState([]),[ov,setOv]=useState(null),[wb,setWb]=useState(null),[sheet,setSheet]=useState(''),[mo,setMo]=useState({});
+ useEffect(()=>{document.documentElement.dataset.theme=theme},[theme]);
+ const ds=useMemo(()=>ds0&&{...ds0,M:{...ds0.M,...mo}},[ds0,mo]);
+ const load=(w,sn)=>{setBusy('Processing dataset…');setErr('');setTimeout(()=>{try{const raw=XLSX.utils.sheet_to_json(w.Sheets[sn],{defval:'',raw:true});if(!raw.length)throw Error('The selected sheet is empty.');const d=build(raw,Object.keys(raw[0]));setDs(d);setMo({});setF({});setDi(0);setPage('overview')}catch(e){setErr(e.message)}setBusy('')},40)};
+ const up=async file=>{if(!file)return;try{const w=await readFile(file);setWb(w);setSheet(w.SheetNames[0]);load(w,w.SheetNames[0])}catch(e){setErr(e.message)}};
+ const rs=useMemo(()=>ds?ds.rows.filter(r=>Object.keys(f).every(k=>String(r[k])===f[k])):[],[ds0,f]);
+ const tog=(k,v)=>setF(p=>{const n={...p};if(p[k]===v)delete n[k];else n[k]=v;return n});
+ const dim=ds&&ds.dims.length?ds.dims[di%ds.dims.length]:null,dim2=ds&&ds.dims.length?ds.dims[(di+1)%ds.dims.length]:null;
+ const NAV=[['data','Data & Quality'],['overview','1 · Executive Overview'],['rev','2 · Revenue & Profitability'],['cost','3 · Expense & Cost'],['risk','4 · Trends & Risk'],['summary','Executive Summary']];
+ const lab=k=>k=='_y'?'Year':k=='_m'?'Month':k=='_q'?'Quarter':k,fl=Object.keys(f).map(k=>lab(k)+' = '+f[k]).join('; ')||'None';
+ const kpis=()=>{if(!ds||!ds.M.rev)return[];const{M}=ds,{$,pc}=mkF(ds),S=agg(rs,ds,()=>1)[0]||{rev:0,pro:0,ship:0,n:0,cost:0,mg:0},k=[];
+  k.push([`Total ${M.rev}`,$(S.rev),'reported',`Sum of the “${M.rev}” column over the filtered records.`]);
+  if(M.pro){k.push([`Total ${M.pro}`,$(S.pro),'reported',`Sum of “${M.pro}”.`],['Profit Margin',pc(S.mg),'calculated',`${M.pro} ÷ ${M.rev}.`],['Derived Cost',$(S.cost),'calculated',`${M.rev} − ${M.pro}. Not a reported column.`])}
+  if(M.ship)k.push([`Total ${M.ship}`,$(S.ship),'reported',`Sum of “${M.ship}”.`]);
+  k.push(['Records',S.n.toLocaleString(),'calculated','Count of cleaned records in view.']);
+  const ys=[...new Set(rs.map(r=>r._y).filter(Boolean))].sort();if(ys.length>=2){const A=agg(rs.filter(r=>r._y==ys[ys.length-2]),ds,()=>1)[0],B=agg(rs.filter(r=>r._y==ys[ys.length-1]),ds,()=>1)[0];if(A&&B&&A.rev)k.push([`${M.rev} Growth ${ys[ys.length-2]}→${ys[ys.length-1]}`,pc(B.rev/A.rev-1),'calculated','Change in total between the last two years in view.'])}
+  return k};
+ const exportPptx=async()=>{try{setBusy('Generating PowerPoint…');const p=new PptxGenJS();p.layout='LAYOUT_WIDE';const title=NAV.find(n=>n[0]==page)[1];let s=p.addSlide();s.addText(title,{x:.5,y:.5,fontSize:28,bold:true,color:'D6002A'});s.addText('Filters: '+fl,{x:.5,y:1.2,fontSize:12});kpis().slice(0,8).forEach((k,i)=>s.addText(k[0]+': '+k[1],{x:.5,y:1.8+i*.4,fontSize:14}));
+  for(const d of[...document.querySelectorAll('.ch')].filter(d=>d.data)){const img=await Plotly.toImage(d,{format:'png',width:1100,height:520});s=p.addSlide();s.addText(d.dataset.t,{x:.5,y:.2,fontSize:18,bold:true});s.addImage({data:img,x:.5,y:.9,w:12,h:5.7})}
+  await p.writeFile({fileName:'Financial_'+page+'.pptx'})}catch(e){setErr('PowerPoint export failed: '+e.message)}setBusy('')};
+ const exp=()=>html`<span class="noprint"><button onClick=${()=>{setBusy('Preparing PDF…');setTimeout(()=>{window.print();setBusy('')},300)}}>⬇ PDF</button> <button onClick=${exportPptx}>⬇ PPTX</button></span>`;
+ const kp=()=>html`<div class="kpis">${kpis().map(k=>html`<div class="card kpi" onClick=${()=>setOv({t:k[0],x:k[3]+' ('+k[2]+' metric)'})}><small>${k[0]} <span class="tag">${k[2]}</span></small><b>${k[1]}</b></div>`)}</div>`;
+ const noRev=ds&&!ds.M.rev;
+ const body=()=>{
+  if(page=='data'||!ds){const q=ds&&ds.dq;return html`<div>
+   <h1>Data & Quality</h1><p class="pu">Upload a CSV, XLS or XLSX file. All analysis runs in your browser; nothing is uploaded.</p>
+   <div class="drop" onDragOver=${e=>e.preventDefault()} onDrop=${e=>{e.preventDefault();up(e.dataTransfer.files[0])}}>Drag & drop a file here, or <input type="file" accept=".csv,.xls,.xlsx" onChange=${e=>up(e.target.files[0])}/></div>
+   ${wb&&wb.SheetNames.length>1?html`<p>Worksheet: <select value=${sheet} onChange=${e=>{setSheet(e.target.value);load(wb,e.target.value)}}>${wb.SheetNames.map(n=>html`<option>${n}</option>`)}</select></p>`:null}
+   ${q?html`<div class="kpis"><div class="card"><small>Original records</small><b>${q.orig.toLocaleString()}</b></div><div class="card"><small>Cleaned records</small><b>${q.clean.toLocaleString()}</b></div><div class="card"><small>Duplicate rows (flagged, kept)</small><b>${q.dups}</b></div><div class="card"><small>Excluded (no valid ${ds.M.rev||'measure'})</small><b>${q.bad}</b></div><div class="card"><small>Records without valid date</small><b>${q.badD}</b></div></div>
+   <div class="card"><h3>Column mapping (auto-detected, editable)</h3>${[['rev','Revenue-like'],['pro','Profit-like'],['ship','Expense-like']].map(([k,l])=>html`<label style=${{marginRight:12}}>${l}: <select value=${ds.M[k]||''} onChange=${e=>setMo({...mo,[k]:e.target.value||undefined})}><option value="">(none)</option>${ds.nums.map(n=>html`<option>${n}</option>`)}</select></label>`)}
+   <p>Primary date: <b>${ds.dcol||'none detected'}</b>. Dimensions: ${ds.dims.join(', ')||'none'}.</p>
+   <b>Transformations applied</b><ul>${q.trans.map(t=>html`<li>${t}</li>`)}</ul><p class="pu">Rows with a missing or non-numeric measure are excluded and counted above; duplicates and rows lacking dates are flagged, not deleted.</p></div>
+   <div class="card sc" style=${{marginTop:12}}><h3>Schema profile</h3><table><tr><th>Column</th><th>Type</th><th>Missing</th></tr>${ds.H.map(h=>html`<tr><td>${h}</td><td>${ds.info[h]}</td><td>${q.miss[h]}</td></tr>`)}</table></div>`:null}</div>`}
+  const t=NAV.find(n=>n[0]==page),pu={overview:'Rapid view of financial position and performance.',rev:'Revenue generation, profitability and performance drivers.',cost:'Cost drivers, concentration and efficiency.',risk:'Stability, volatility and risk indicators.',summary:'Dynamically generated findings and recommended actions.'}[page];
+  if(noRev)return html`<div><h1>${t[1]}</h1><div class="err">No revenue-like numeric column was detected. Choose one under Data & Quality → Column mapping.</div></div>`;
+  if(page=='summary'){const{recs,notes}=insights(rs,ds),sec=(c,n)=>html`<div class="card"><h3>${n}</h3>${recs.filter(r=>r.c==c).map(r=>html`<p><b>${r.f}</b> <span class="tag">${r.t}</span><br/>${r.m}</p>`)||''}${recs.some(r=>r.c==c)?null:html`<p class="pu">Nothing flagged.</p>`}</div>`;
+   return html`<div id="pg"><div class="bar"><h1 style=${{flex:1}}>${t[1]}</h1>${exp()}</div><p class="pu">${pu} Filters: ${fl}</p>
+   <div class="grid">${sec('key','A. Key financial findings')}${sec('pos','B. Positive performance indicators')}${sec('con','C. Areas of concern')}${sec('risk','D. Financial risks')}</div>
+   <div class="card sc" style=${{marginTop:12}}><h3>E. Recommended management actions</h3><table><tr><th>Finding</th><th>Supporting metric</th><th>Implication</th><th>Action & follow-up</th><th>Priority</th></tr>${recs.filter(r=>r.c!='key'||r.p!='Low').map(r=>html`<tr><td>${r.f}</td><td>${r.m}</td><td>${r.i}</td><td>${r.a}</td><td class=${r.p=='High'?'hi':''}>${r.p}</td></tr>`)}</table></div>
+   <div class="card" style=${{marginTop:12}}><h3>Assumptions and limitations</h3><ul>${notes.map(n=>html`<li>${n}</li>`)}</ul></div></div>`}
+  const cs=charts(page,{rs,ds,dim,dim2,tog});
+  return html`<div id="pg"><div class="bar"><h1 style=${{flex:1}}>${t[1]}</h1>${exp()}</div><p class="pu">${pu} Filters: ${fl}</p>
+   ${page=='overview'?kp():null}
+   ${!cs.length?html`<div class="err">This dataset has no columns supporting this page (it needs a profit- or expense-like measure).</div>`:html`<div class="grid">${cs.map(c=>html`<${Chart} key=${page+c.t} ...${c} theme=${theme}/>`)}</div>`}
+   ${page=='overview'?html`<div class="card" style=${{marginTop:12}}><h3>What management should look at</h3><ul>${insights(rs,ds).recs.filter(r=>r.p!='Low').slice(0,4).map(r=>html`<li><b>${r.f}:</b> ${r.m}. ${r.a}</li>`)}</ul></div>`:null}
+   ${page!='data'?html`<${Drill} rs=${rs} ds=${ds} pg=${page} dim=${dim}/>`:null}</div>`};
+ return html`<div class="app"><aside><div class="logo">FIN·INTEL</div><div class="sub">Financial Intelligence Dashboard</div>
+  ${NAV.map(([k,l])=>html`<button class=${'nav'+(page==k?' on':'')} onClick=${()=>setPage(ds||k=='data'?k:'data')}>${l}</button>`)}
+  <div class="noprint" style=${{marginTop:16}}><button onClick=${()=>setTheme(theme=='dark'?'light':'dark')}>${theme=='dark'?'☀ Light':'🌙 Dark'}</button> <a href="https://www.linkedin.com/in/shinerosewriter/" target="_blank" rel="noopener" title="LinkedIn" style=${{verticalAlign:'middle'}}><svg width="26" height="26" viewBox="0 0 24 24"><rect width="24" height="24" rx="4" fill="#0A66C2"/><path fill="#fff" d="M6.4 9.5h2.5V18H6.4zM7.6 5.6a1.4 1.4 0 110 2.9 1.4 1.4 0 010-2.9zM10.5 9.5h2.4v1.2c.4-.7 1.3-1.4 2.600-1.400 2.700 0 3.100 1.700 3.100 3.900V18h-2.500v-4.300c0-1 0-2.300-1.400-2.300s-1.600 1.100-1.600 2.200V18h-2.500z"/></svg></a></div></aside>
+  <main>${ds&&page!='data'?html`<div class="bar noprint"><label>Analyze by <select value=${di%(ds.dims.length||1)} onChange=${e=>setDi(+e.target.value)}>${ds.dims.map((d,i)=>html`<option value=${i}>${d}</option>`)}</select></label>
+   ${ds.slicers.map(s=>html`<select value=${f[s.k]||''} onChange=${e=>{const n={...f};if(e.target.value)n[s.k]=e.target.value;else delete n[s.k];setF(n)}}><option value="">All ${s.l}</option>${s.v.map(v=>html`<option value=${v}>${v}</option>`)}</select>`)}
+   <button class="pri" onClick=${()=>setF({})}>Reset Filters</button>${Object.keys(f).map(k=>html`<span class="chip">${lab(k)}: ${f[k]} ✕</span>`)}
+   <span style=${{flex:1}}></span><button onClick=${()=>setBm([...bm,{n:'Bookmark '+(bm.length+1),page,f,di}])}>🔖 Save view</button>${bm.length?html`<select value="" onChange=${e=>{const b=bm[+e.target.value];if(b){setPage(b.page);setF(b.f);setDi(b.di)}}}><option value="">Restore…</option>${bm.map((b,i)=>html`<option value=${i}>${b.n} · ${b.page}</option>`)}</select>`:null}</div>`:null}
+   ${err?html`<div class="err">${err}</div>`:null}${busy?html`<div class="card">${busy}</div>`:null}${body()}</main>
+  ${ov?html`<div class="ov" onClick=${()=>setOv(null)}><div class="card"><h3>${ov.t}</h3><p>${ov.x}</p><button class="pri">Close</button></div></div>`:null}</div>`}
+class EB extends React.Component{constructor(p){super(p);this.state={e:null}}static getDerivedStateFromError(e){return{e}}render(){return this.state.e?html`<div class="err" style=${{margin:20}}>Something went wrong: ${String(this.state.e.message)}. Reload the page and try again.</div>`:this.props.children}}
+ReactDOM.createRoot(document.getElementById('root')).render(html`<${EB}><${App}/><//>`);
+</script></body></html>
